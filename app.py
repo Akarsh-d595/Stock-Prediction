@@ -8,6 +8,7 @@ from sklearn.metrics import mean_squared_error
 import plotly.graph_objects as go
 import numpy as np
 import datetime
+import ta # Import the Technical Analysis library
 
 # --- Streamlit App Configuration ---
 st.set_page_config(page_title="Stock Price Predictor", layout="wide")
@@ -31,17 +32,6 @@ def fetch_stock_data(ticker, period='5y', interval='1d'):
 def search_ticker_by_name(company_name):
     """Searches for a ticker symbol given a company name using yfinance."""
     try:
-        # yfinance.Ticker() sometimes handles common names, or we can use yfinance.search()
-        # yfinance.search often requires specific parameters and can be complex.
-        # For simplicity, we'll try a direct lookup first if yf.Ticker handles it, or give a hint.
-
-        # A more robust solution might involve a dedicated API for name-to-ticker conversion
-        # For this example, we'll suggest the user provides the ticker if lookup fails.
-
-        # yfinance search is not directly exposed for simple string search to ticker like this in the Ticker class.
-        # A workaround is to try to fetch data, and if it fails, it might be a name.
-        # However, a proper search would need an external library or service.
-        # Let's guide the user to provide exact tickers or try common name conversions.
         st.warning("Direct company name to ticker lookup is complex and not fully supported by yfinance without external tools. Please try to provide the exact ticker symbol (e.g., 'AAPL' for Apple Inc.).")
         return None
     except Exception as e:
@@ -60,10 +50,20 @@ def create_features(df):
     df['High_Low_Diff'] = df['High'] - df['Low']
     df['Open_Close_Diff'] = df['Open'] - df['Close']
 
+    # Add more technical indicators using 'ta' library
+    df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+    macd = ta.trend.macd(df['Close'])
+    df['MACD'] = macd
+    df['MACD_Signal'] = ta.trend.macd_signal(df['Close'])
+
+    # Add Lag Features
+    df['Close_Lag1'] = df['Close'].shift(1)
+    df['Volume_Lag1'] = df['Volume'].shift(1)
+
     # Target: Next day's close price
     df['Target'] = df['Close'].shift(-1)
 
-    # Drop rows with NaN values created by rolling means or shift
+    # Drop rows with NaN values created by rolling means or shift or technical indicators
     df = df.dropna()
     return df
 
@@ -71,7 +71,8 @@ def train_model(df):
     """Trains a RandomForestRegressor model and returns the model and feature columns."""
     features = ['Open', 'High', 'Low', 'Close', 'Volume', 'MA50', 'MA200',
                 'Day_of_Week', 'Day_of_Month', 'Month', 'Year', 'Volume_MA50',
-                'High_Low_Diff', 'Open_Close_Diff']
+                'High_Low_Diff', 'Open_Close_Diff', 'RSI', 'MACD', 'MACD_Signal',
+                'Close_Lag1', 'Volume_Lag1'] # Updated features list
 
     X = df[features]
     y = df['Target']
@@ -240,8 +241,8 @@ if st.button("Predict"):
 st.sidebar.markdown("### About this App")
 st.sidebar.info(
     "This application predicts the next day's stock closing price using a Random Forest Regressor model. "
-    "It uses `yfinance` to fetch historical data and `Plotly` for interactive visualizations." 
-    "Features include 50-day and 200-day Moving Averages, volume, and date-related features."
+    "It uses `yfinance` to fetch historical data and `Plotly` for interactive visualizations."
+    "Features include 50-day and 200-day Moving Averages, volume, date-related features, RSI, MACD, and now lag-1 close and volume values."
 )
 
 st.sidebar.markdown("Developed by Akarsh Dubey/AI Assistant")
